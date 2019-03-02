@@ -386,6 +386,9 @@ out.mat %>%
   cols_align("center") %>% 
   tab_source_note("Above is a bayesian replication of table 1. Based upon the data, 2000 predictive iterations were used to formulate median values and 95% credible intervals (The interval in which 95% of outcomes were found). These values, as in the main results, were separated according to, first, all respondents, and second, only those who indicated they waited on the platform for the train.") %>%
   tab_source_note("ⁱEach of the questions allowed responses on a five-point scale ranging from strongly agree to strongly disagree (exact answers were changed to be appropriate to the actual question). Values in this table were not transformed as, for whatever reason, the credible interval seemed to include 0 with much higher frequency when the values were transformed. I would be interested to understand why this is.")
+
+# Note: reference below was taken from Mr. Schroeder's work because I don't
+# really know how to use bib files properly.
 ```
 
 ## Discussion
