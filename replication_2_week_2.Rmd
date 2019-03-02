@@ -1,0 +1,395 @@
+---
+title: "Replication 2"
+author: "Jack Luby"
+date: "2/19/2019"
+output: html_document
+citation_package: natbib
+bibliography: bibliography.bib
+---
+
+## Abstract
+
+Below is a replication of RD Enos's "Causal effect of intergroup contact on exclusionary attitudes" (@enos2014). This replication draws from his public code and builds upon it, looking to formulate a similar analysis using bayesian analysis. 
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+```
+
+```{r}
+# Refresh global environment to re-run
+rm(list = ls())
+```
+
+```{r}
+###THE PACKAGES BELOW MAY NEED TO BE INSTALLED USING install.packages('x'), WHERE X IS THE PACKAGE NAME
+
+library(dplyr)
+library(ri)
+library(RItools)
+library(car)
+library(xtable)
+library(effects)
+library(RColorBrewer)
+library(kableExtra)
+library(gt)
+library(tibble)
+library(rstanarm)
+library(tidybayes)
+library(stargazer)
+```
+
+```{r}
+options(scipen = 999)  ##set for non-scientific notation output
+
+##Load data
+dat.all = read.csv('dataverse_files/pnas_data.csv')
+dat.t1 = read.csv('dataverse_files/t1_data.csv')
+dat.all.prime = read.csv('dataverse_files/prime_data.csv')
+###data loading for faces graphic
+conf.dat = read.csv('dataverse_files/confederate_face_data.csv')
+hisp.dat = read.csv('dataverse_files/hispanic_face_data.csv')
+white.dat = read.csv('dataverse_files/white_face_data.csv')
+```
+
+```{r main_results}
+##main_results.r
+####primary randomization inferece
+
+# Setting the variables over which we want to interate
+repeats = c("numberim","Remain","Englishlan")
+
+# Creating naming sets for the 'repeats', or questions, so that they can be used for separate calculations
+x.names = paste(repeats,".x",sep="")
+y.names = paste(repeats,".y",sep="")
+
+# Setting the "covariates" concept for when we need to take them from dat.use. Currently called "line.x" in the dat.use table
+covariates = c('line.x')
+
+# Create an empty matrix to build on later
+final.mat = matrix(nrow = 0, ncol = 8)
+
+# Differentiate our subsets, "all" being everyone and "no.car" being only those who indicated they wait on the platform for the train (ie are likely to be more effected by the treatment effect).
+subsets = c('all','no.car')
+
+# Extranous declaration
+# cat('beginning inference \n')
+
+# Iterate over "all" and then "no.car"
+for(subset in subsets){
+
+  # Create an out matrix with 8 variables, and one observation for each 'repeat', or question (length(repeats))
+	out.mat = matrix(nrow = length(repeats), ncol = 8)
+	
+	# If we are not subsetting, we use all the data
+	if(subset == 'all'){
+		dat.subset = dat.all
+	}
+	# If we subset to only the platform waiters, we subset to only those whose 'habits' indicate that they wait on the platform 
+	if(subset ==  'no.car'){
+		dat.subset = dat.all[dat.all$habits != 1,]
+		}
+
+	# For whatever reason explicitly declare the word "treatment" for use later
+	z.variable = 'treatment'
+	
+	# For each of the questions, we scale results from 0-1 by taking the actual data (responses ranging from 1-5), subtract 1, and divide by 4
+	for(j in 1:length(repeats)){
+	  # Rescale x to 0-4 then 0-1
+		dat.subset$x.new = (as.numeric(dat.subset[,x.names[j]])-1)/4
+		# Rescale y to 0-4 then 0-1
+		dat.subset$y.new = (as.numeric(dat.subset[,y.names[j]])-1)/4  
+		# Create "Y", the values we display in our table, by subtracting x.new from y.new
+		dat.subset$Y = dat.subset$y.new - dat.subset$x.new
+		
+		# Take only the values that are not NA, for "use"
+		dat.use = dat.subset[is.na(dat.subset$Y) == F,]
+		
+		# Calculate interest variables for each group
+		x.sd = sd(dat.use$x.new,na.rm = T)
+		x.mean = mean(dat.use$x.new,na.rm = T)
+		y.mean = mean(dat.use$y.new,na.rm = T)
+		y.treat = mean(dat.use$y.new[dat.use$treatment==1],na.rm = T)
+	
+		# Build a table of the stations which have no recorded control or no treatment observations so that they can be taken out (I think?)
+		station.treatment.table = table(dat.use$station,dat.use[,z.variable])
+		no.control.stations = names(which(station.treatment.table[,1] == 0))
+		no.treatment.stations = names(which(station.treatment.table[,2] == 0))
+		dat.use = dat.use[!dat.use$station%in%c(no.control.stations,no.treatment.stations),]
+				
+		
+		dat.use$station = factor(dat.use$station)
+		dat.use$treated_unit = factor(dat.use$treated_unit)
+		# Take out the covariates (under "line.x") and save them as Xs
+		Xs = data.matrix(dat.use[,covariates])
+		
+		# Generate perms and probabilities for establishing our ATE
+		perms <- genperms(Z = dat.use[,z.variable], blockvar=dat.use$station, clustvar=dat.use$treated_unit)
+		probs = genprobexact(Z = dat.use[,z.variable], blockvar=dat.use$station, clustvar=dat.use$treated_unit)
+
+		# Generate variables of interest using the probabilities established above
+		ate = estate(Y = dat.use$Y, Z = dat.use[,z.variable], X = Xs, prob = probs)
+		Ys = genouts(Y = dat.use$Y, Z = dat.use[,z.variable], ate = 0)
+		distout <- gendist(Ys,perms, prob=probs)
+		disp =	dispdist(distout, ate = ate, display.plot = F)
+		
+		# Build an out table using all of the variables we have built above for each of the questions. End inner loop.
+		out.mat[j,1] = repeats[j]
+		out.mat[j,2] = subset
+		out.mat[j,3] = nrow(dat.use)
+		out.mat[j,4] = ate
+		out.mat[j,5] = disp$greater.p.value
+		out.mat[j,6] = disp$lesser.p.value
+		out.mat[j,7] = x.sd
+		out.mat[j,8] = x.mean
+	}
+	# Bind our results to our "final" mat which has both "all" and "no.car" treatments. End initial loop.
+	final.mat = rbind(final.mat,out.mat)
+	}
+
+final.mat = as.data.frame(final.mat)
+colnames(final.mat) = c('variable','subset','N','ate','greater.p.value','lesser.p.value','x.sd','x.mean')
+
+final.mat.main = final.mat ##final.mat for output creation later
+
+# Reproducing the table myself because I cannot be bothered to deal with all the nonsense below.
+# output_create.r
+# Taken from below and brought up to make the table we need
+
+# Declare variables for use in table later
+ output.vars = c('numberim','Remain','Englishlan')
+ var.names = c('Number of immigrants be increased?ⁱ','Children of undocumented be allowed to stay?','English as official language?')
+
+ 
+ ##Changed slightly because we don't need prime anymore
+ final.mat.use = final.mat.main
+ 
+ # Taking the values from final.mat.use and making them easier to use
+ final.mat.use$greater.p.value = as.numeric(as.character(final.mat.use$greater.p.value)); final.mat.use$lesser.p.value = as.numeric(as.character(final.mat.use$lesser.p.value)); final.mat.use$ate = as.numeric(as.character(final.mat.use$ate)); final.mat.use$x.mean = as.numeric(as.character(final.mat.use$x.mean)); final.mat.use$x.sd = as.numeric(as.character(final.mat.use$x.sd)); final.mat.use$N = as.numeric(as.character(final.mat.use$N))
+ final.mat.use$p.value = final.mat.use$greater.p.value
+
+ # Create final.mat.redact by selecting out variables of interest, round numerics accordingly
+ final.mat.redact = final.mat.use[,c('variable','subset','ate','p.value','x.mean','x.sd','N')]
+ final.mat.redact[,c('ate','p.value','x.mean','x.sd')] = round(final.mat.redact[,c('ate','p.value','x.mean','x.sd')],3)
+
+ # Create our new ate and mean outputs by integrating the p value, making it easier to use our table
+ final.mat.redact$ate.new = paste(final.mat.redact$ate,' (',final.mat.redact$p.value,')',sep='')
+ final.mat.redact$x.mean.new = paste(final.mat.redact$x.mean,' (',final.mat.redact$x.sd,')',sep='')
+
+ # Create out.mat.a for just our "all" subset
+ out.mat.a = final.mat.redact[final.mat.redact$subset == 'all'&final.mat.redact$variable %in% output.vars,]
+
+ # Subset down our out.mats to just the values we need
+ # Create N variables which are just the max values of our N's prior
+ out.mat.a = final.mat.redact[final.mat.redact$subset == 'all'&final.mat.redact$variable %in% output.vars,c('ate.new')]	
+ out.mat.c = final.mat.redact[final.mat.redact$subset == 'no.car'&final.mat.redact$variable %in% output.vars,c('ate.new')]
+ out.mat.x = final.mat.redact[final.mat.redact$subset == 'all'&final.mat.redact$variable %in% output.vars,c('x.mean.new')]
+ Ns = c('N',max(final.mat.redact$N[final.mat.redact$subset=='all']),
+	max(final.mat.redact$N[final.mat.redact$subset=='no.car']),
+	max(final.mat.redact$N[final.mat.redact$subset=='all'])
+	)
+
+ # Formatting
+ hs = c('Question','ATE (p)*','CATE (p)','T1 levels (sd)')
+ row.names(hs) = NULL
+	
+ # Bind all of our mat's together
+ out.mat = cbind(out.mat.a,cbind(out.mat.c,out.mat.x))
+ out.mat = cbind(var.names,out.mat)
+ out.mat = rbind(out.mat,Ns)
+ 
+ # Bind headings to our mat
+ out.mat = rbind(hs,out.mat)
+ 
+ # Create our out table, with necessary digits
+ out.table = xtable(out.mat
+	)
+ 
+ # Add rownames
+ rownames(out.table) <- out.table$var.names
+ 
+ # Select variables we need
+ out.table <- out.table %>% 
+   select("out.mat.a", "out.mat.c", "out.mat.x")
+
+ # Create gt table 1
+ out.table %>% 
+   # Add rownames to stub
+    gt(rownames_to_stub = T) %>%
+   # Add a stubhead label to match Enos formatting
+    tab_stubhead_label(label = "Question") %>%  
+   # Change column labels to match Enos formatting
+    cols_label("out.mat.a" = "All respondents",
+            "out.mat.c" = "Waits on platform",
+            "out.mat.x" = "All respondents") %>% 
+   # Add title, using md to add markdown formatting
+   tab_header(title = md("*Table 1. Experiment results*")) %>% 
+   # Add source notes below
+   tab_source_note("In the first 'All respondents' column, ATE represents responses in T2-T1 for the treatment group compared with the countrol group for the entire experimental sample. Positive values mean a more politically conservative response. In the 'Waits on platform' column, CATEs are the Conditional Average Treatment Effects from persons who said they stand on the platform, rather than wait in their cars. In the second 'All respondents' column, T1 levels and SDs for each variable for all respondents. All variables scaled 0-1.") %>% 
+   tab_source_note("*P values from a one-tailed test against the Null Hypothesis of no effect are in parentheses.") %>% 
+   tab_source_note("ⁱEach of the questions allowed responses on a five-point scale ranging from strongly agree to strongly disagree (exact answers were changed to be appropriate to the actual question)")
+```
+
+
+
+```{r balance_check}
+##balance_check.r
+###check to see if randomization created balanced samples in Enos experiment
+####RdE September 2012
+
+# Perform balance test for use in table 2
+
+out.balance.test = xBalance(fmla = treatment ~ liberal+republican+obama.disapprove+ride.everyday+voted.2010+romney.voter+Hispanics.x+age+residency.new+hispanic.new+college+income.new+male+white, data = dat.all, report = c("std.diffs","z.scores","adj.means","chisquare.test"), strata = factor(dat.all$station))
+
+# Select variables of interest, round, and add a final row for r values
+
+xtable.out.balance.text = xtable(out.balance.test) %>%
+  select("treatment=0", 
+         "treatment=1", 
+         "std.diff", 
+         "z") %>% 
+  round(2) %>%
+  add_row("treatment=0" = 117, "treatment=1" = 103, "std.diff" = "", "z"= "")
+
+# Add rownames to table
+
+rownames(xtable.out.balance.text) <- c('Liberalⁱ', 'Republican', 'Obama disapprove', 'Ride MBTA every day', 'Voted 2010', 'Romney voter', 'Hispanic threat', 'Age', 'Residency year', 'Hispanic', 'College', 'Income', 'Male', 'White', "n")
+
+# Build gt table
+
+xtable.out.balance.text %>% 
+  # Add rownames to the stub with rownames_to_stub option.
+  gt(rownames_to_stub = T) %>% 
+  # Change column labels with cols_label
+  cols_label("treatment=0" = "Control",
+             "treatment=1" = "Treatment",
+             "std.diff" = "Standard difference*",
+             "z" = "Z score") %>% 
+  # tab_stubhead_label adds a label to the top of the stub
+  tab_stubhead_label(label = "Condition") %>% 
+  # Tab header adds a title, md allows for markdown edits with * adding italicization
+  tab_header(title = md("*Table 2. Covariate balance across treatment conditions*")) %>%
+  # Align the columns center, against default right
+  cols_align("center") %>% 
+  # Add tab source notes
+  tab_source_note("ⁱMean response values for pretreatment variables accounting for stratification into train stations. All variables are 0 and 1 variables, except for Hispanic threat, which is a seven-point scale indicating how threatening respondents find Hispanics, recoded 0-1; residency, which is measured in years; and income, which is annual income in dollars.") %>% 
+  tab_source_note("*Difference in standardized units")
+```
+
+
+
+```{r include = FALSE}
+# I wanted to find a way to practice the stan_glm function we learned in DataCamp
+# but was still a bit unsteady on how to apply it. Big thanks goes to Sean for
+# providing the baseline concepts behind this. Note: Beyond initial inspiration,
+# I did not look at Sean's code from start to finish so hopefully there will still
+# be significant differences in the way we went about coding this problem.
+
+# Take dat.all to edit
+summary_data <- dat.all %>% 
+  # Select variables of interest
+  select(station, treatment, habits,
+         numberim.x, Remain.x, Englishlan.x, 
+         numberim.y, Remain.y, Englishlan.y, 
+         zip.pct.hispanic, white, us.born, time.treatment, 
+         obama.voter, romney.voter, voted.2010, college, age) %>% 
+  # Mutate to create summed variables, then create simple difference variables
+  mutate(sum_x = numberim.x + Remain.x + Englishlan.x,
+         sum_y = numberim.y + Remain.y + Englishlan.y,
+         numberim_change = numberim.y - numberim.x,
+         Remain_change = Remain.y - Remain.x,
+         Englishlan_change = Englishlan.y - Englishlan.x,
+         view_change = sum_y - sum_x) %>% 
+  # Filter out values for which any of the survey questions are not answered
+  filter(!is.na(view_change))
+
+# Run stan_glm, using base settings of 2000 iterations and 1000 warmup
+numberim_all <- stan_glm(numberim_change ~ treatment, data = summary_data)
+# Save interval
+interval <- posterior_interval(numberim_all, prob = .95)
+# Save median value
+median <- round(as.numeric(coef(numberim_all)), 3)
+# Build out number value which has median (interval) layout
+n_all <- paste(median[2], ' (', round(interval[2], 3), ', ', round(interval[5], 3), ')', sep = "")
+
+Remain_all <- stan_glm(Remain_change ~ treatment, data = summary_data)
+interval <- posterior_interval(Remain_all, prob = .95)
+median <- round(as.numeric(coef(Remain_all)), 3)
+R_all <- paste(median[2], ' (', round(interval[2], 3), ', ', round(interval[5], 3), ')', sep = "")
+
+Englishlan_all <- stan_glm(Englishlan_change ~ treatment, data = summary_data)
+interval <- posterior_interval(Englishlan_all, prob = .95)
+median <- round(as.numeric(coef(Englishlan_all)), 3)
+E_all <- paste(median[2], ' (', round(interval[2], 3), ', ', round(interval[5], 3), ')', sep = "")
+
+view_change_all <- stan_glm(view_change ~ treatment, data = summary_data)
+interval <- posterior_interval(view_change_all, prob = .95)
+median <- round(as.numeric(coef(view_change_all)), 3)
+v_c_all <- paste(median[2], ' (', round(interval[2], 3), ', ', round(interval[5], 3), ')', sep = "")
+
+# Change dataset to only those participants who wait 
+# for the train on the platform, following Enos convention
+summary_data_wait <- summary_data %>% 
+  filter(habits != 1)
+  
+numberim_wait <- stan_glm(numberim_change ~ treatment, data = summary_data_wait)
+interval <- posterior_interval(numberim_wait, prob = .95)
+median <- round(as.numeric(coef(numberim_all)), 3)
+n_wait <- paste(median[2], ' (', round(interval[2], 3), ', ', round(interval[5], 3), ')', sep = "")
+
+Remain_wait <- stan_glm(Remain_change ~ treatment, data = summary_data_wait)
+interval <- posterior_interval(Remain_wait, prob = .95)
+median <- round(as.numeric(coef(Remain_all)), 3)
+R_wait <- paste(median[2], ' (', round(interval[2], 3), ', ', round(interval[5], 3), ')', sep = "")
+
+Englishlan_wait <- stan_glm(Englishlan_change ~ treatment, data = summary_data_wait)
+interval <- posterior_interval(Englishlan_wait, prob = .95)
+median <- round(as.numeric(coef(Englishlan_wait)), 3)
+E_wait <- paste(median[2], ' (', round(interval[2], 3), ', ', round(interval[5], 3), ')', sep = "")
+
+view_change_wait <- stan_glm(view_change ~ treatment, data = summary_data_wait)
+interval <- posterior_interval(view_change_wait, prob = .95)
+median <- round(as.numeric(coef(view_change_wait)), 3)
+v_c_wait <- paste(median[2], ' (', round(interval[2], 3), ', ', round(interval[5], 3), ')', sep = "")
+
+# Build up two "mat"s which include all values of the respective case
+out.mat.a <- rbind(n_all, R_all, E_all, v_c_all)
+out.mat.b <- rbind(n_wait, R_wait, E_wait, v_c_wait)
+# Bind those two "mat"s together
+out.mat <- cbind(out.mat.a, out.mat.b)
+
+# Build headers to describe our results
+hs = c('Median (CI)','Median (CI)')
+# Clear rowname for hs such that it does not alter our formatting
+row.names(hs) = NULL
+# Bind headers to table
+out.mat = rbind(hs, out.mat)
+
+# Add rownames so that they can be added to the stub
+rownames(out.mat) <- c('Question', 'Number of immigrants be increased?ⁱ','Children of undocumented be allowed to stay?','English as official language?', 'All questions')
+# Add colnames so that those colnames can be targeted and changed later. Following an Enos convention.
+colnames(out.mat) <- c('out.mat.a', 'out.mat.b')
+```
+
+```{r}
+# Build final gt table
+out.mat %>% 
+  # Add row names to stub
+  gt(rownames_to_stub = T) %>%
+  # Label the stubhead to match Enos formatting
+    tab_stubhead_label(label = "Question") %>%  
+  # Relabel columns
+    cols_label("out.mat.a" = "All respondents",
+            "out.mat.b" = "Waits on platform") %>%
+  # Add tab header, using md to add markdown formatting
+   tab_header(title = md("*Table 3. Bayesian replication of main results*")) %>% 
+  # Align columns center
+  cols_align("center") %>% 
+  tab_source_note("Above is a bayesian replication of table 1. Based upon the data, 2000 predictive iterations were used to formulate median values and 95% credible intervals (The interval in which 95% of outcomes were found). These values, as in the main results, were separated according to, first, all respondents, and second, only those who indicated they waited on the platform for the train.") %>%
+  tab_source_note("ⁱEach of the questions allowed responses on a five-point scale ranging from strongly agree to strongly disagree (exact answers were changed to be appropriate to the actual question). Values in this table were not transformed as, for whatever reason, the credible interval seemed to include 0 with much higher frequency when the values were transformed. I would be interested to understand why this is.")
+```
+
+## Discussion
+
+All individual cases failed to exclude 0 from their 95% credible interval, although in most replications the first case does exclude 0. When combined, conservatism displayed across questions does appear to be affected by treatment. This bayesian analysis could benefit from additional variables being considered, although those tested did not appear to improve significance. It should be noted that these methods cannot necessarily be trusted to give exacting credible intervals, as 1000 iterations still yields significant variation on the outsides of the distribution.
+
+## References
