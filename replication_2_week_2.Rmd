@@ -11,6 +11,8 @@ bibliography: bibliography.bib
 
 Below is a replication of RD Enos's "Causal effect of intergroup contact on exclusionary attitudes" (@enos2014). This replication draws from his public code and builds upon it, looking to formulate a similar analysis using bayesian analysis. 
 
+Great to have an abstract!
+
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
 ```
@@ -111,6 +113,7 @@ for(subset in subsets){
 		y.treat = mean(dat.use$y.new[dat.use$treatment==1],na.rm = T)
 	
 		# Build a table of the stations which have no recorded control or no treatment observations so that they can be taken out (I think?)
+		# great to have comments like this^ throughout the code
 		station.treatment.table = table(dat.use$station,dat.use[,z.variable])
 		no.control.stations = names(which(station.treatment.table[,1] == 0))
 		no.treatment.stations = names(which(station.treatment.table[,2] == 0))
@@ -227,6 +230,8 @@ final.mat.main = final.mat ##final.mat for output creation later
    tab_source_note("In the first 'All respondents' column, ATE represents responses in T2-T1 for the treatment group compared with the countrol group for the entire experimental sample. Positive values mean a more politically conservative response. In the 'Waits on platform' column, CATEs are the Conditional Average Treatment Effects from persons who said they stand on the platform, rather than wait in their cars. In the second 'All respondents' column, T1 levels and SDs for each variable for all respondents. All variables scaled 0-1.") %>% 
    tab_source_note("*P values from a one-tailed test against the Null Hypothesis of no effect are in parentheses.") %>% 
    tab_source_note("ⁱEach of the questions allowed responses on a five-point scale ranging from strongly agree to strongly disagree (exact answers were changed to be appropriate to the actual question)")
+   
+   # very nicely done table! This is great work
 ```
 
 
@@ -273,6 +278,8 @@ xtable.out.balance.text %>%
   # Add tab source notes
   tab_source_note("ⁱMean response values for pretreatment variables accounting for stratification into train stations. All variables are 0 and 1 variables, except for Hispanic threat, which is a seven-point scale indicating how threatening respondents find Hispanics, recoded 0-1; residency, which is measured in years; and income, which is annual income in dollars.") %>% 
   tab_source_note("*Difference in standardized units")
+  
+  # very nice table again, both better than what is in the original
 ```
 
 
@@ -283,6 +290,8 @@ xtable.out.balance.text %>%
 # providing the baseline concepts behind this. Note: Beyond initial inspiration,
 # I did not look at Sean's code from start to finish so hopefully there will still
 # be significant differences in the way we went about coding this problem.
+
+# Excellent commenting!
 
 # Take dat.all to edit
 summary_data <- dat.all %>% 
@@ -351,6 +360,8 @@ interval <- posterior_interval(view_change_wait, prob = .95)
 median <- round(as.numeric(coef(view_change_wait)), 3)
 v_c_wait <- paste(median[2], ' (', round(interval[2], 3), ', ', round(interval[5], 3), ')', sep = "")
 
+# Nice, glad you got some more practice with stan_glm
+
 # Build up two "mat"s which include all values of the respective case
 out.mat.a <- rbind(n_all, R_all, E_all, v_c_all)
 out.mat.b <- rbind(n_wait, R_wait, E_wait, v_c_wait)
@@ -389,10 +400,15 @@ out.mat %>%
 
 # Note: reference below was taken from Mr. Schroeder's work because I don't
 # really know how to use bib files properly.
+# That's fine, always good to give credit. And it may be worth learning!
 ```
 
 ## Discussion
 
 All individual cases failed to exclude 0 from their 95% credible interval, although in most replications the first case does exclude 0. When combined, conservatism displayed across questions does appear to be affected by treatment. This bayesian analysis could benefit from additional variables being considered, although those tested did not appear to improve significance. It should be noted that these methods cannot necessarily be trusted to give exacting credible intervals, as 1000 iterations still yields significant variation on the outsides of the distribution.
+
+Great practive to have a discussion regarding your replication. For future extensions I would recommend talking a little more about your extension. Why did you choose to do what you did? What does it show? What are the advantages/disadvantages of this method over the one's used by the author?
+
+It may be useful in the future to have some more comments/notes from what was talked about in class where the code is doing some type of complex analysis (I know you missed some class, so nothing to worry about for this replication)
 
 ## References
